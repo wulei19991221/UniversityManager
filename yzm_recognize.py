@@ -10,9 +10,8 @@ import cv2
 from PIL import Image
 
 
-def yzm_result():
+def yzm_result(url: str):
     client = AipOcr(BaiduApi.APP_ID, BaiduApi.API_KEY, BaiduApi.SECRET_KEY)
-    url = 'http://202.199.115.46/(n2woc445sw0mzi55zdl1fojl)/CheckCode.aspx'
     while True:
         with open('yzm.png', 'wb') as f:
             content = requests.get(url).content

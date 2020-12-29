@@ -187,7 +187,7 @@ class EducationSystem:
     def run(self):
         self.login()
         # self.quickComment()
-        self.getScore()
+        # self.getScore()
 
 
 if __name__ == '__main__':

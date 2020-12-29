@@ -5,8 +5,6 @@
 # @File: 沈阳化工后台.py
 import os
 import re
-from pprint import pprint
-
 from print_color import *
 import requests
 from lxml import etree

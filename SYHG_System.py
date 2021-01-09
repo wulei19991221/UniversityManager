@@ -3,6 +3,7 @@
 # @Author:ACHIEVE_DREAM
 # @Time: 2020年12月17日22时
 # @File: 沈阳化工后台.py
+import json
 import os
 import re
 from print_color import *
@@ -10,6 +11,9 @@ import requests
 from lxml import etree
 from yzm_recognize import yzm_result
 from random import choice
+
+LINE_WIDTH = 80
+FILL_CHAR = '-'
 
 
 class EducationSystem:
@@ -36,31 +40,30 @@ class EducationSystem:
     # 学号, 密码, 姓名
     user_id, password, name = '', '', ''
     # 评价列表
-    comment_list = ['优秀'.encode('gb2312'), '良好'.encode('gb2312'), '中等'.encode('gb2312')]
+    comment_list = ['优秀'.encode('gb2312'), '良好'.encode('gb2312')]
     # 课程评价的表单
-    data = {
+    origin_data = {
         '__EVENTTARGET': '',
         '__EVENTARGUMENT': '',
         'pjxx': '',
         'txt1': '',
-        '__VIEWSTATEGENERATOR': 'F9DC6E6D',
         'TextBox1': '0',
         'Button1': '保  存'.encode('gb2312')
     }
-    # 是否更新VIEWSTATE
-    UPDATE_VIEW = False
+    info_file = 'infos.json'
+    info_data = {}
 
     # 获取账号密码
     @staticmethod
     def getUserPwd():
-        # name = input_c('账号: ', color1=fcyan)
-        # pwd = input_c('密码: ', color1=fcyan)
-        name = '1803030110'
-        pwd = 'wulei123456'
+        name = input_c('学号: ', color1=fcyan)
+        pwd = input_c('密码: ', color1=fcyan)
         return name, pwd
 
     # 登录
     def login(self):
+        if os.path.exists(self.info_file):
+            self.info_data = json.load(open(self.info_file, 'r', encoding='utf8'))
         self.user_id, self.password = self.getUserPwd()
         while True:
             erCode = yzm_result(self.yzm_url)
@@ -81,7 +84,10 @@ class EducationSystem:
             result = requests.post(self.login_url, data=data).content.decode('gb2312')
             if self.isRight(result):
                 self.getInfos(result)
-                print_c(f'欢迎{self.name},登录成功', color1=fgreen)
+                self.info_data[self.name[:-2]] = [self.user_id, self.password]
+                json.dump(self.info_data, open(self.info_file, 'w', encoding='utf8'),
+                          indent=2, ensure_ascii=False)
+                print_c(f'欢迎{self.name},登录成功'.center(LINE_WIDTH, FILL_CHAR), color1=fgreen)
                 os.remove('yzm.png')
                 break
 
@@ -112,13 +118,17 @@ class EducationSystem:
         self.headers['Referer'] = self.home_url
 
     # 获取VIEWSTARE值
-    def getPageParm(self, url):
-        response = requests.get(url, headers=self.headers).content.decode('gb2312')
-        html = etree.HTML(response)
+    def getPageParm(self, url, html=None):
+        if html is None:
+            response = requests.get(url, headers=self.headers).content.decode('gb2312')
+            html = etree.HTML(response)
         viewState = html.xpath("//form[@id='form1']/input[@name='__VIEWSTATE']/@value")
         if not viewState:
             viewState = html.xpath("//form[@id='Form1']/input[@name='__VIEWSTATE']/@value")
-        return viewState[0]
+        try:
+            return viewState[0]
+        except IndexError:
+            pass
 
     # 查询成绩
     def getScore(self):
@@ -152,44 +162,38 @@ class EducationSystem:
         classNames = self.all_url.get('comment_className', False)
         urls = self.all_url.get('comment_urls', False)
         if classNames or urls:
-            for i in range(len(urls[:-1])):
+            firstUrl = urls[0]
+            response = self.startComment(classNames[0], firstUrl, response=None, isLast=False, firstUrl=firstUrl)
+            self.headers['Referer'] = firstUrl
+            for i in range(1, len(urls[:-1])):
                 url = urls[i]
                 className = classNames[i]
-                self.startComment(url, className)
-            self.startComment(urls[-1], classNames[-1], isLast=True)
+                response = self.startComment(className, url, response, isLast=False, firstUrl=firstUrl)
+            self.startComment(classNames[-1], urls[-1], response, isLast=True, firstUrl=firstUrl)
         else:
-            print_c('你已经评价过了')
+            print_c('你已经评价过了哟q(≧▽≦q)')
 
-    # 开始评价
-    def startComment(self, url: str, className: str, isLast=False):
+    def startComment(self, className: str, url: str, response=None, isLast=False, firstUrl=None):
         print(f'正在评价:\t{className}')
-        html = etree.HTML(requests.get(url, headers=self.headers).content.decode('gb2312'))
-
-        if not self.UPDATE_VIEW:
-            viewStare = self.getPageParm(url)
-            self.data['__VIEWSTATE'] = viewStare
-            self.UPDATE_VIEW = True
+        if not response:
+            html = etree.HTML(requests.get(url, headers=self.headers).content.decode('gb2312'))
+        else:
+            html = etree.HTML(response)
+        viewStare = self.getPageParm(url, html)
+        data = self.origin_data.copy()
+        data['__VIEWSTATE'] = viewStare
         pjkc = re.findall(r"xkkh=(.*?)&xh", url)[0]
         param1 = html.xpath('//*[@id="DataGrid1"]//select[@id]/@name')
         param2 = html.xpath('//*[@id="DataGrid1"]//input[@id]/@name')
-        self.data['pjkc'] = pjkc
+        data['pjkc'] = pjkc
         for j in range(len(param1)):
-            self.data[param1[j]] = choice(self.comment_list)
-            self.data[param2[j]] = ''
+            data[param1[j]] = choice(self.comment_list)
+            data[param2[j]] = ''
         if isLast:
-            self.data['Button2'] = '提  交'.encode('gb2312')
-            requests.post(url, headers=self.headers, data=self.data)
+            requests.post(firstUrl, headers=self.headers, data=data)
+            data['Button2'] = '提  交'.encode('gb2312')
+            requests.post(firstUrl, headers=self.headers, data=data)
             print_c('<----------评价全部完成---------->', color1=fgreen)
         else:
-            requests.post(url, headers=self.headers, data=self.data)
-
-    # 主函数
-    def run(self):
-        self.login()
-        # self.quickComment()
-        # self.getScore()
-
-
-if __name__ == '__main__':
-    educationSystem = EducationSystem()
-    educationSystem.run()
+            response = requests.post(firstUrl, headers=self.headers, data=data).content.decode('gb2312')
+            return response
